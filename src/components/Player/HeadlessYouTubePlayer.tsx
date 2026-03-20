@@ -5,6 +5,7 @@ import YouTube, { YouTubeEvent, YouTubePlayer } from 'react-youtube';
 import { usePlayerStore } from '@/store/player.store';
 import { getRelatedTracks } from '@/services/youtube.service';
 import { toast } from 'sonner';
+import { playerBridge } from '@/lib/playerBridge';
 
 export function HeadlessYouTubePlayer() {
   const currentTrack = usePlayerStore((state) => state.currentTrack);
@@ -24,8 +25,15 @@ export function HeadlessYouTubePlayer() {
   const silentAudioRef = useRef<HTMLAudioElement>(null);
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
 
+  // Sync with playerBridge
+  useEffect(() => {
+    if (playerRef.current) {
+      playerBridge.setPlayer(playerRef.current);
+    }
+  }, [playerRef.current]);
+
   // FIX 1: When a new track loads, use loadVideoById directly so the player
-  // never unloads between songs.  This avoids the "re-init of the iframe" problem.
+  // never unloads between songs. This avoids the "re-init of the iframe" problem.
   const prevTrackIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!currentTrack) {
@@ -51,13 +59,28 @@ export function HeadlessYouTubePlayer() {
     prevTrackIdRef.current = newId;
   }, [currentTrack]); // eslint-disable-line
 
-  // FIX 2: Sync silent keep-alive with isPlaying so iOS keeps the audio session open
+  // FIX 2: React to isPlaying changes from the store (Webapp play/pause fix)
   useEffect(() => {
-    if (!silentAudioRef.current) return;
-    if (isPlaying) {
-      silentAudioRef.current.play().catch(() => {/* user hasn't interacted yet */});
-    } else {
-      silentAudioRef.current.pause();
+    if (playerRef.current) {
+      const state = playerRef.current.getPlayerState();
+      if (isPlaying) {
+        if (state !== YouTube.PlayerState.PLAYING && state !== YouTube.PlayerState.BUFFERING) {
+          playerRef.current.playVideo();
+        }
+      } else {
+        if (state === YouTube.PlayerState.PLAYING || state === YouTube.PlayerState.BUFFERING) {
+          playerRef.current.pauseVideo();
+        }
+      }
+    }
+    
+    // Also sync the silent keep-alive
+    if (silentAudioRef.current) {
+      if (isPlaying) {
+        silentAudioRef.current.play().catch(() => {/* user hasn't interacted yet */});
+      } else {
+        silentAudioRef.current.pause();
+      }
     }
   }, [isPlaying]);
 
@@ -117,20 +140,24 @@ export function HeadlessYouTubePlayer() {
     if (isPlaying) {
       interval = setInterval(async () => {
         if (!playerRef.current) return;
-        const currentTime = await playerRef.current.getCurrentTime();
-        const duration = await playerRef.current.getDuration();
-        if (currentTime != null) setProgress(currentTime);
-        if (duration != null) setDuration(duration);
+        try {
+          const currentTime = await playerRef.current.getCurrentTime();
+          const duration = await playerRef.current.getDuration();
+          if (currentTime != null) setProgress(currentTime);
+          if (duration != null) setDuration(duration);
 
-        // Update the notification bar scrubber
-        if ('mediaSession' in navigator && duration > 0) {
-          try {
-            navigator.mediaSession.setPositionState({
-              duration,
-              playbackRate: 1,
-              position: currentTime,
-            });
-          } catch (_) { /* some browsers don't support this yet */ }
+          // Update the notification bar scrubber
+          if ('mediaSession' in navigator && duration > 0) {
+            try {
+              navigator.mediaSession.setPositionState({
+                duration,
+                playbackRate: 1,
+                position: currentTime,
+              });
+            } catch (_) { /* some browsers don't support this yet */ }
+          }
+        } catch (e) {
+          // Player might be destroyed or inaccessible
         }
       }, 1000);
     }
@@ -151,16 +178,13 @@ export function HeadlessYouTubePlayer() {
       ],
     });
 
-    // Play/pause handlers call the actual player API directly (not just state update!)
-    // This ensures iOS actually resumes YT playback, not just the silent audio element.
+    // Play/pause handlers call the actual player API directly
     navigator.mediaSession.setActionHandler('play', () => {
-      playerRef.current?.playVideo();
-      silentAudioRef.current?.play().catch(() => {});
+      playerBridge.play();
       setIsPlaying(true);
     });
     navigator.mediaSession.setActionHandler('pause', () => {
-      playerRef.current?.pauseVideo();
-      silentAudioRef.current?.pause();
+      playerBridge.pause();
       setIsPlaying(false);
     });
     navigator.mediaSession.setActionHandler('previoustrack', () => {
@@ -172,7 +196,7 @@ export function HeadlessYouTubePlayer() {
     // Seek support for the notification scrubber
     navigator.mediaSession.setActionHandler('seekto', (details) => {
       if (details.seekTime != null && playerRef.current) {
-        playerRef.current.seekTo(details.seekTime, true);
+        playerBridge.seek(details.seekTime);
         setProgress(details.seekTime);
       }
     });
@@ -190,6 +214,7 @@ export function HeadlessYouTubePlayer() {
 
   const onReady = (event: YouTubeEvent) => {
     playerRef.current = event.target;
+    playerBridge.setPlayer(event.target);
     playerRef.current.setVolume(volume);
     try {
       playerRef.current.setPlaybackQuality(quality === 'auto' ? 'default' : quality);
@@ -199,19 +224,21 @@ export function HeadlessYouTubePlayer() {
 
   const onStateChange = (event: YouTubeEvent) => {
     if (event.data === YouTube.PlayerState.PLAYING) {
-      setIsPlaying(true);
-      // Keep silent audio in sync — crucial for session keep-alive
+      if (!isPlaying) setIsPlaying(true);
       silentAudioRef.current?.play().catch(() => {});
     } else if (event.data === YouTube.PlayerState.PAUSED) {
-      // Only mark as paused if the page is VISIBLE (not a background throttle event)
-      if (document.visibilityState === 'visible') {
-        setIsPlaying(false);
-        silentAudioRef.current?.pause();
-      }
+      // Sync store even in background so notification bar doesn't get stuck in "Playing" state
+      if (isPlaying) setIsPlaying(false);
+      silentAudioRef.current?.pause();
     } else if (event.data === YouTube.PlayerState.ENDED) {
-      // Just advance state — the currentTrack useEffect will call loadVideoById above,
-      // keeping the iframe alive during the transition with no teardown.
-      playNext();
+      const { loop } = usePlayerStore.getState();
+      if (loop) {
+        playerBridge.seek(0);
+        playerBridge.play();
+        setProgress(0);
+      } else {
+        playNext();
+      }
     }
   };
 
@@ -245,10 +272,6 @@ export function HeadlessYouTubePlayer() {
           playNext();
         }}
       />
-      {/*
-        Silent WAV keep-alive — forces iOS/Android to keep the Web Audio session open,
-        preventing the OS from suspending the tab when the screen is locked.
-      */}
       <audio
         ref={silentAudioRef}
         src="data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA"

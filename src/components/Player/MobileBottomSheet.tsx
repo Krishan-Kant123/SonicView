@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Visualizer } from '@/components/Player/Visualizer';
 import { AddToPlaylistModal } from '@/components/Playlists/AddToPlaylistModal';
+import { playerBridge } from '@/lib/playerBridge';
 
 export function MobileBottomSheet() {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -160,7 +161,15 @@ export function MobileBottomSheet() {
                 <SkipBack className="w-10 h-10 fill-current" />
               </button>
               <button 
-                onClick={() => setIsPlaying(!isPlaying)}
+                onClick={() => {
+                  if (isPlaying) {
+                    playerBridge.pause();
+                    setIsPlaying(false);
+                  } else {
+                    playerBridge.play();
+                    setIsPlaying(true);
+                  }
+                }}
                 className="w-20 h-20 flex items-center justify-center bg-white text-black rounded-full hover:scale-105 active:scale-95 transition-transform shadow-xl"
               >
                 {isPlaying ? <Pause className="w-10 h-10 fill-current" /> : <Play className="w-10 h-10 fill-current ml-2" />}
@@ -280,7 +289,16 @@ export function MobileBottomSheet() {
                 <SkipBack className="w-5 h-5 md:w-6 md:h-6 fill-current" />
               </button>
               <button 
-                onClick={(e) => { e.stopPropagation(); setIsPlaying(!isPlaying); }}
+                onClick={(e) => { 
+                  e.stopPropagation(); 
+                  if (isPlaying) {
+                    playerBridge.pause();
+                    setIsPlaying(false);
+                  } else {
+                    playerBridge.play();
+                    setIsPlaying(true);
+                  }
+                }}
                 className="p-1 sm:p-2 bg-transparent text-white rounded-full hover:scale-105 active:scale-95 transition-transform"
               >
                 {isPlaying ? <Pause className="w-7 h-7 md:w-8 md:h-8 fill-current" /> : <Play className="w-7 h-7 md:w-8 md:h-8 fill-current ml-0.5" />}
