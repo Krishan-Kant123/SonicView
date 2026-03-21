@@ -3,33 +3,52 @@
 import { useEffect, useState } from 'react';
 import { getTrendingMusic, searchMusic, YouTubeVideoItem } from '@/services/youtube.service';
 import { usePlayerStore } from '@/store/player.store';
+import { useSettingsStore } from '@/store/settings.store';
 import { Play, LayoutGrid, List, PlusSquare } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { AddToPlaylistModal } from '@/components/Playlists/AddToPlaylistModal';
 import { toast } from 'sonner';
 
+/**
+ * Returns the best thumbnail URL for a given quality setting.
+ * - 'small' (Data Saver)  : default (120p) → medium (320p) — tiny thumbnails
+ * - 'medium' (Standard)   : standard (640x480) → high (480p equivalent) → medium
+ * - 'large' (High Quality): maxres → standard → high
+ * - 'hd720' / 'auto'      : maxres → standard → high → medium
+ */
+export function getThumbnailUrl(
+  track: YouTubeVideoItem,
+  quality: string
+): string {
+  const t = track.snippet.thumbnails;
+  switch (quality) {
+    case 'small':
+      return t.default?.url || t.medium?.url || '';
+    case 'medium':
+      // standard (640×480) gives good look without huge data
+      return t.standard?.url || t.high?.url || t.medium?.url || '';
+    case 'large':
+    case 'hd720':
+    case 'auto':
+    default:
+      return t.maxres?.url || t.standard?.url || t.high?.url || t.medium?.url || '';
+  }
+}
+
 export function MusicFeed({ query }: { query?: string }) {
   const [tracks, setTracks] = useState<YouTubeVideoItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
   const [selectedTrackForPlaylist, setSelectedTrackForPlaylist] = useState<YouTubeVideoItem | null>(null);
+
   const playTrack = usePlayerStore((state) => state.playTrack);
   const setQueue = usePlayerStore((state) => state.setQueue);
   const quality = usePlayerStore((state) => state.quality);
 
-  const getThumbnailUrl = (track: YouTubeVideoItem) => {
-    const t = track.snippet.thumbnails;
-    switch(quality) {
-      case 'small': return t.default?.url || t.medium?.url;
-      case 'medium': return t.medium?.url || t.high?.url;
-      case 'hd720': return t.maxres?.url || t.high?.url || t.medium?.url;
-      case 'large': return t.high?.url || t.medium?.url;
-      case 'auto':
-      default: return t.medium?.url || t.high?.url;
-    }
-  };
+  // Persisted view mode from settings store
+  const viewMode = useSettingsStore((state) => state.viewMode);
+  const setViewMode = useSettingsStore((state) => state.setViewMode);
 
   useEffect(() => {
     async function loadData() {
@@ -37,12 +56,7 @@ export function MusicFeed({ query }: { query?: string }) {
       setNextPageToken(null);
       setTracks([]);
       try {
-        let response;
-        if (query) {
-           response = await searchMusic(query);
-        } else {
-           response = await getTrendingMusic();
-        }
+        const response = query ? await searchMusic(query) : await getTrendingMusic();
         setTracks(response.items);
         setNextPageToken(response.nextPageToken || null);
       } catch (err) {
@@ -52,7 +66,6 @@ export function MusicFeed({ query }: { query?: string }) {
         setIsLoading(false);
       }
     }
-
     loadData();
   }, [query]);
 
@@ -60,35 +73,45 @@ export function MusicFeed({ query }: { query?: string }) {
     if (!nextPageToken || isLoadingMore) return;
     setIsLoadingMore(true);
     try {
-        const response = query ? await searchMusic(query, nextPageToken) : await getTrendingMusic('US', nextPageToken);
-        setTracks(prev => [...prev, ...response.items]);
-        setNextPageToken(response.nextPageToken || null);
+      const response = query
+        ? await searchMusic(query, nextPageToken)
+        : await getTrendingMusic('US', nextPageToken);
+      setTracks(prev => [...prev, ...response.items]);
+      setNextPageToken(response.nextPageToken || null);
     } catch (err) {
-        console.error(err);
-        toast.error("Network error. Failed to load more tracks.");
+      console.error(err);
+      toast.error("Network error. Failed to load more tracks.");
     } finally {
-        setIsLoadingMore(false);
+      setIsLoadingMore(false);
     }
   };
 
-  const handlePlay = (track: YouTubeVideoItem, index: number) => {
+  const handlePlay = (track: YouTubeVideoItem) => {
     setQueue(tracks);
     playTrack(track);
   };
 
   const ViewToggle = () => (
-    <div className="flex justify-end px-4 mb-2">
-      <div className="flex bg-white/5 rounded-lg p-1 shadow-inner shadow-black/20">
-        <button 
-          onClick={() => setViewMode('grid')} 
-          className={cn("p-1.5 rounded-md transition-colors", viewMode === 'grid' ? "bg-white/10 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300")}
+    <div className="flex justify-end px-4 mb-3">
+      <div className="flex rounded-lg p-1" style={{ background: 'var(--surface-container)' }}>
+        <button
+          onClick={() => setViewMode('grid')}
+          className="p-1.5 rounded-md transition-colors"
+          style={{
+            background: viewMode === 'grid' ? 'rgba(0,252,67,0.15)' : 'transparent',
+            color: viewMode === 'grid' ? 'var(--primary)' : 'var(--on-surface-variant)',
+          }}
           title="Grid View"
         >
           <LayoutGrid className="w-5 h-5" />
         </button>
-        <button 
-          onClick={() => setViewMode('list')} 
-          className={cn("p-1.5 rounded-md transition-colors", viewMode === 'list' ? "bg-white/10 text-white shadow-sm" : "text-zinc-500 hover:text-zinc-300")}
+        <button
+          onClick={() => setViewMode('list')}
+          className="p-1.5 rounded-md transition-colors"
+          style={{
+            background: viewMode === 'list' ? 'rgba(0,252,67,0.15)' : 'transparent',
+            color: viewMode === 'list' ? 'var(--primary)' : 'var(--on-surface-variant)',
+          }}
           title="List View"
         >
           <List className="w-5 h-5" />
@@ -102,7 +125,7 @@ export function MusicFeed({ query }: { query?: string }) {
       <div className="w-full">
         <ViewToggle />
         {viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6 animate-pulse p-4 pt-0">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 animate-pulse px-4">
             {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
               <div key={i} className="flex flex-col space-y-3">
                 <div className="bg-zinc-800/40 aspect-video rounded-xl" />
@@ -112,15 +135,15 @@ export function MusicFeed({ query }: { query?: string }) {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col gap-3 animate-pulse p-4 pt-0">
-            {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-               <div key={i} className="flex gap-4 items-center p-2">
-                 <div className="bg-zinc-800/40 w-16 h-16 rounded-xl shrink-0" />
-                 <div className="flex flex-col gap-2 flex-1">
-                   <div className="bg-zinc-800/40 h-4 w-1/3 rounded" />
-                   <div className="bg-zinc-800/40 h-3 w-1/4 rounded" />
-                 </div>
-               </div>
+          <div className="flex flex-col gap-2 animate-pulse px-4">
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <div key={i} className="flex gap-4 items-center p-3 rounded-xl">
+                <div className="bg-zinc-800/40 w-14 h-14 rounded-lg shrink-0" />
+                <div className="flex flex-col gap-2 flex-1">
+                  <div className="bg-zinc-800/40 h-4 w-2/3 rounded" />
+                  <div className="bg-zinc-800/40 h-3 w-1/3 rounded" />
+                </div>
+              </div>
             ))}
           </div>
         )}
@@ -131,46 +154,48 @@ export function MusicFeed({ query }: { query?: string }) {
   return (
     <div className="w-full relative">
       <ViewToggle />
-      
+
       {viewMode === 'grid' ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-6 p-4 pt-0">
-          {tracks.map((track, idx) => {
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4 px-4">
+          {tracks.map((track) => {
             const id = typeof track.id === 'string' ? track.id : track.id.videoId;
             return (
               <div key={id} className="group relative flex flex-col text-left transition-all hover:-translate-y-1">
-                <button onClick={() => handlePlay(track, idx)} className="w-full text-left">
-                  <div className="relative aspect-video w-full overflow-hidden rounded-xl shadow-lg shadow-black/40 mb-3">
+                <button onClick={() => handlePlay(track)} className="w-full text-left">
+                  <div className="relative aspect-video w-full overflow-hidden rounded-xl mb-2"
+                       style={{ boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
                     <img
-                      src={getThumbnailUrl(track)}
+                      src={getThumbnailUrl(track, quality)}
                       alt={track.snippet.title}
                       className="object-cover w-full h-full transition-transform duration-500 group-hover:scale-105"
                       loading="lazy"
                     />
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
-                      <div className="bg-purple-500 text-white rounded-full p-3 transform scale-75 group-hover:scale-100 transition-transform shadow-lg shadow-purple-500/50">
-                        <Play className="w-8 h-8 fill-current ml-1" />
+                    <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                         style={{ background: 'rgba(0,0,0,0.55)' }}>
+                      <div className="rounded-full p-2.5 transform scale-75 group-hover:scale-100 transition-transform"
+                           style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-container))',
+                                    boxShadow: '0 0 20px rgba(0,252,67,0.4)' }}>
+                        <Play className="w-5 h-5 fill-current" style={{ color: 'var(--on-primary)' }} />
                       </div>
                     </div>
                   </div>
                 </button>
-                <div className="flex items-start justify-between gap-2">
-                  <button onClick={() => handlePlay(track, idx)} className="flex flex-col flex-1 text-left">
-                    <h3 className="font-semibold text-zinc-100 text-sm md:text-base line-clamp-2 leading-tight mb-1 hover:text-purple-400 transition-colors">
+                <div className="flex items-start justify-between gap-1 px-0.5">
+                  <button onClick={() => handlePlay(track)} className="flex flex-col flex-1 text-left min-w-0">
+                    <h3 className="font-semibold text-xs line-clamp-2 leading-tight mb-0.5 transition-colors"
+                        style={{ color: 'var(--on-surface)' }}>
                       {track.snippet.title}
                     </h3>
-                    <p className="text-zinc-400 text-xs md:text-sm">{track.snippet.channelTitle}</p>
-                    {track.statistics?.viewCount && (
-                      <p className="text-zinc-500 text-[10px] mt-1">
-                        {parseInt(track.statistics.viewCount).toLocaleString()} views
-                      </p>
-                    )}
+                    <p className="text-xs truncate" style={{ color: 'var(--primary)', opacity: 0.7 }}>
+                      {track.snippet.channelTitle}
+                    </p>
                   </button>
-                  <button 
+                  <button
                     onClick={(e) => { e.stopPropagation(); setSelectedTrackForPlaylist(track); }}
-                    className="p-2 text-zinc-500 hover:text-white hover:bg-white/10 rounded-full transition-colors shrink-0"
+                    className="p-1.5 text-zinc-600 hover:text-white hover:bg-white/10 rounded-full transition-colors shrink-0"
                     title="Add to Playlist"
                   >
-                    <PlusSquare className="w-5 h-5" />
+                    <PlusSquare className="w-4 h-4" />
                   </button>
                 </div>
               </div>
@@ -178,31 +203,29 @@ export function MusicFeed({ query }: { query?: string }) {
           })}
         </div>
       ) : (
-        <div className="flex flex-col gap-2 p-4 pt-0">
+        <div className="flex flex-col gap-1 px-4">
           {tracks.map((track, idx) => {
             const id = typeof track.id === 'string' ? track.id : track.id.videoId;
             return (
-              <div key={id} className="group flex flex-row items-center gap-4 text-left p-2 rounded-xl hover:bg-white/5 transition-colors">
-                <button onClick={() => handlePlay(track, idx)} className="relative w-24 sm:w-28 aspect-video shrink-0 rounded-lg overflow-hidden shadow-md shadow-black/40">
+              <div key={id} className="group flex flex-row items-center gap-3 text-left p-2.5 rounded-xl hover:bg-white/5 transition-colors">
+                <button onClick={() => handlePlay(track)} className="relative w-14 h-14 shrink-0 rounded-lg overflow-hidden shadow-md shadow-black/40">
                   <img
-                    src={quality === 'small' ? (track.snippet.thumbnails.default?.url || track.snippet.thumbnails.medium?.url) : track.snippet.thumbnails.medium?.url}
+                    src={getThumbnailUrl(track, quality)}
                     alt={track.snippet.title}
                     className="object-cover w-full h-full transition-transform duration-500 group-hover:scale-105"
                     loading="lazy"
                   />
-                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
-                    <div className="text-white transform scale-75 group-hover:scale-100 transition-transform">
-                      <Play className="w-8 h-8 fill-current shadow-black drop-shadow-lg ml-0.5" />
-                    </div>
+                  <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <Play className="w-5 h-5 fill-current text-white" />
                   </div>
                 </button>
-                
-                <button onClick={() => handlePlay(track, idx)} className="flex flex-col flex-1 overflow-hidden pr-2 justify-center text-left">
-                  <h3 className="font-semibold text-zinc-100 text-sm md:text-base line-clamp-1 leading-tight hover:text-purple-400 transition-colors">
+
+                <button onClick={() => handlePlay(track)} className="flex flex-col flex-1 overflow-hidden text-left">
+                  <span className="font-semibold text-zinc-100 text-sm line-clamp-1 leading-tight hover:text-primary transition-colors">
                     {track.snippet.title}
-                  </h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <p className="text-zinc-400 text-xs md:text-sm truncate">{track.snippet.channelTitle}</p>
+                  </span>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-zinc-500 text-xs truncate">{track.snippet.channelTitle}</span>
                     {track.statistics?.viewCount && (
                       <span className="text-zinc-600 text-[10px] hidden sm:inline-block">
                         • {parseInt(track.statistics.viewCount).toLocaleString()} views
@@ -211,12 +234,16 @@ export function MusicFeed({ query }: { query?: string }) {
                   </div>
                 </button>
 
-                <button 
+                <span className="text-zinc-600 text-xs shrink-0 hidden sm:block">
+                  {idx + 1}
+                </span>
+
+                <button
                   onClick={(e) => { e.stopPropagation(); setSelectedTrackForPlaylist(track); }}
-                  className="p-3 text-zinc-500 hover:text-white hover:bg-white/10 rounded-full transition-colors mr-2 shrink-0"
+                  className="p-2 text-zinc-600 hover:text-white hover:bg-white/10 rounded-full transition-colors shrink-0"
                   title="Add to Playlist"
                 >
-                  <PlusSquare className="w-5 h-5" />
+                  <PlusSquare className="w-4 h-4" />
                 </button>
               </div>
             );
@@ -224,24 +251,22 @@ export function MusicFeed({ query }: { query?: string }) {
         </div>
       )}
 
-      {/* Pagination Load More */}
       {nextPageToken && (
         <div className="flex justify-center mt-8 mb-4">
-          <button 
+          <button
             onClick={handleLoadMore}
             disabled={isLoadingMore}
-            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 px-8 py-3 rounded-full text-white font-medium transition-colors disabled:opacity-50 shadow-md shadow-black/20"
+            className="flex items-center gap-2 bg-white/5 hover:bg-white/10 border border-white/10 px-8 py-3 rounded-full text-white font-medium transition-colors disabled:opacity-50 shadow-md"
           >
-            {isLoadingMore ? "Loading..." : "Load More Tracks"}
+            {isLoadingMore ? "Loading..." : "Load More"}
           </button>
         </div>
       )}
 
-      {/* Playlist Modal Integration */}
       {selectedTrackForPlaylist && (
-        <AddToPlaylistModal 
-          track={selectedTrackForPlaylist} 
-          onClose={() => setSelectedTrackForPlaylist(null)} 
+        <AddToPlaylistModal
+          track={selectedTrackForPlaylist}
+          onClose={() => setSelectedTrackForPlaylist(null)}
         />
       )}
     </div>

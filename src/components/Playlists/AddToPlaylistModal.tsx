@@ -28,34 +28,40 @@ export function AddToPlaylistModal({ track, onClose }: { track: YouTubeVideoItem
   const trackId = typeof track.id === 'string' ? track.id : track.id.videoId;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4" onClick={onClose}
+         style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)' }}>
       <div 
-        className="bg-[#18181b] w-full max-w-sm rounded-3xl p-6 border border-white/10 shadow-2xl flex flex-col max-h-[80vh]" 
+        className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl flex flex-col max-h-[85vh] sm:max-h-[80vh] border-t sm:border border-white/10" 
+        style={{ background: 'var(--surface-container)', borderColor: 'var(--surface-container-high)' }}
         onClick={e => e.stopPropagation()}
       >
+        <div className="w-10 h-1 rounded-full mx-auto mb-5 sm:hidden" style={{ background: 'var(--surface-container-high)' }} />
+        
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-bold text-white flex items-center gap-2">
-            <Library className="w-5 h-5 text-purple-400" />
+          <h2 className="text-lg font-black tracking-tight flex items-center gap-2" style={{ color: 'var(--on-surface)' }}>
+            <Library className="w-5 h-5" style={{ color: 'var(--primary)' }} />
             Add to Playlist
           </h2>
-          <button onClick={onClose} className="p-2 text-zinc-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-colors">
-            <X className="w-5 h-5" />
+          <button onClick={onClose} className="p-2 rounded-full transition-colors"
+                  style={{ background: 'var(--surface-container-high)', color: 'var(--on-surface-variant)' }}>
+            <X className="w-4 h-4" />
           </button>
         </div>
 
         {/* Selected Track Info */}
-        <div className="flex items-center gap-3 bg-black/30 p-3 rounded-2xl mb-6">
-          <img src={track.snippet.thumbnails.medium?.url} className="w-12 h-12 rounded-lg object-cover" alt="thumbnail" />
+        <div className="flex items-center gap-3 p-3 rounded-2xl mb-6 shadow-inner border border-white/5"
+             style={{ background: 'rgba(0,0,0,0.2)' }}>
+          <img src={track.snippet.thumbnails.default?.url || track.snippet.thumbnails.medium?.url} className="w-10 h-10 rounded-lg object-cover" alt="thumbnail" />
           <div className="flex flex-col flex-1 overflow-hidden">
-            <span className="text-white text-sm font-semibold truncate">{track.snippet.title}</span>
-            <span className="text-zinc-400 text-xs truncate">{track.snippet.channelTitle}</span>
+            <span className="text-sm font-bold truncate" style={{ color: 'var(--on-surface)' }}>{track.snippet.title}</span>
+            <span className="text-[10px] font-medium truncate uppercase tracking-widest mt-0.5" style={{ color: 'var(--on-surface-variant)' }}>{track.snippet.channelTitle}</span>
           </div>
         </div>
 
         {/* Playlists List */}
-        <div className="flex flex-col gap-2 overflow-y-auto mb-6 custom-scrollbar pr-2 flex-1">
+        <div className="flex flex-col gap-2 overflow-y-auto mb-6 custom-scrollbar pr-1 flex-1">
           {playlists.length === 0 ? (
-            <p className="text-center text-zinc-500 text-sm py-4 italic">No playlists created yet.</p>
+            <p className="text-center text-xs py-4 opacity-50" style={{ color: 'var(--on-surface-variant)' }}>No playlists created yet.</p>
           ) : (
             playlists.map(pl => {
               const alreadyAdded = pl.tracks.some(t => (typeof t.id === 'string' ? t.id : t.id.videoId) === trackId);
@@ -64,19 +70,23 @@ export function AddToPlaylistModal({ track, onClose }: { track: YouTubeVideoItem
                   key={pl.id}
                   disabled={alreadyAdded}
                   onClick={() => handleAddToPlaylist(pl.id)}
-                  className={cn(
-                    "flex items-center justify-between p-3 rounded-xl transition-colors text-left group",
-                    alreadyAdded ? "bg-white/5 opacity-50 cursor-not-allowed" : "bg-white/5 hover:bg-white/10 cursor-pointer"
-                  )}
+                  className="flex items-center justify-between p-3 rounded-xl transition-all text-left outline-none"
+                  style={{
+                    background: alreadyAdded ? 'rgba(0,0,0,0.1)' : 'var(--surface-container-high)',
+                    opacity: alreadyAdded ? 0.5 : 1,
+                    cursor: alreadyAdded ? 'not-allowed' : 'pointer'
+                  }}
+                  onMouseEnter={(e) => !alreadyAdded && (e.currentTarget.style.filter = 'brightness(1.2)')}
+                  onMouseLeave={(e) => !alreadyAdded && (e.currentTarget.style.filter = 'none')}
                 >
                   <div className="flex flex-col">
-                    <span className="text-white font-semibold text-sm">{pl.name}</span>
-                    <span className="text-zinc-500 text-xs">{pl.tracks.length} tracks</span>
+                    <span className="font-bold text-sm" style={{ color: 'var(--on-surface)' }}>{pl.name}</span>
+                    <span className="text-[10px] font-medium mt-0.5" style={{ color: 'var(--on-surface-variant)' }}>{pl.tracks.length} tracks</span>
                   </div>
                   {!alreadyAdded ? (
-                    <PlusSquare className="w-5 h-5 text-zinc-400 group-hover:text-purple-400" />
+                    <PlusSquare className="w-4 h-4" style={{ color: 'var(--on-surface-variant)' }} />
                   ) : (
-                    <span className="text-xs text-purple-400 font-bold uppercase tracking-wider">Added</span>
+                    <span className="text-[9px] font-black uppercase tracking-[0.2em]" style={{ color: 'var(--primary)' }}>Added</span>
                   )}
                 </button>
               )
@@ -85,20 +95,30 @@ export function AddToPlaylistModal({ track, onClose }: { track: YouTubeVideoItem
         </div>
 
         {/* Create New Form */}
-        <form onSubmit={handleCreate} className="flex items-center gap-2 mt-auto pt-4 border-t border-white/10">
+        <form onSubmit={handleCreate} className="flex items-center gap-2 mt-auto pt-4 border-t" style={{ borderColor: 'var(--surface-container-high)' }}>
           <input 
             type="text" 
             placeholder="New playlist name..." 
             value={newPlaylistName}
             onChange={(e) => setNewPlaylistName(e.target.value)}
-            className="flex-1 bg-black/50 text-white text-sm rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-purple-500 border border-white/5"
+            className="flex-1 text-sm rounded-xl px-4 py-3 outline-none transition-all placeholder:text-[11px] placeholder:font-black placeholder:uppercase placeholder:tracking-widest"
+            style={{ 
+              background: 'rgba(0,0,0,0.2)', 
+              color: 'var(--on-surface)',
+              border: '1px solid var(--surface-container-high)' 
+            }}
           />
           <button 
             type="submit"
             disabled={!newPlaylistName.trim()}
-            className="p-3 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl transition-colors shadow-lg shadow-purple-600/30"
+            className="p-3 rounded-xl transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ 
+              background: 'linear-gradient(135deg, var(--primary), var(--primary-container))',
+              color: 'var(--on-primary)',
+              boxShadow: '0 4px 15px rgba(0,252,67,0.2)'
+            }}
           >
-            <Plus className="w-5 h-5" />
+            <Plus className="w-4 h-4 fill-current" />
           </button>
         </form>
       </div>

@@ -1,30 +1,170 @@
 @import "tailwindcss";
 
+/* ═══════════════════════════════════════════════════════════════════════
+   DESIGN SYSTEM: "The Obsidian Lens" — SonicView
+   All colors are defined here as CSS custom properties.
+   Change a token here and it updates everywhere in the app.
+   ═══════════════════════════════════════════════════════════════════════ */
+
 :root {
-  --background: #09090b;
-  --foreground: #fafafa;
+  /* ── Brand Accent ─────────────────────────────────────────────────── */
+  --primary:             #00fc43;   /* Electric Green — primary CTAs, active states */
+  --primary-container:   #00c434;   /* Deeper green — gradient end, pressed states  */
+  --secondary:           #0a8a22;   /* Dark Green — secondary accents, backgrounds  */
+  --secondary-container: #065c16;   /* Darkest green — secondary containers         */
+  --tertiary:            #ffd5ac;   /* Warm Orange/Gold — metadata highlights       */
+  --tertiary-container:  #c97b30;   /* Deeper orange                                */
+
+  /* ── Neutral ──────────────────────────────────────────────────────── */
+  --neutral:             #6f7a6a;   /* Slate Green — mid-tone neutral               */
+
+  /* ── Surface Hierarchy ("Obsidian Depth") ─────────────────────────── */
+  --background:                #0d0d0d;  /* The void                            */
+  --surface:                   #131313;  /* Base surface                        */
+  --surface-dim:               #111111;  /* Dimmed areas                        */
+  --surface-container-lowest:  #0e0e0e;  /* Deepest container                   */
+  --surface-container-low:     #1c1b1b;  /* Low-level containers (inputs, etc.) */
+  --surface-container:         #201f1f;  /* Standard content areas              */
+  --surface-container-high:    #2a2a2a;  /* Glass cards, hover surfaces         */
+  --surface-container-highest: #353534;  /* Topmost surface (modals, overlays)  */
+  --surface-bright:            #3a3939;  /* Bright surface — focus rings, etc.  */
+
+  /* ── Text ─────────────────────────────────────────────────────────── */
+  --on-surface:         #e5e2e1;   /* Primary text — NOT pure white (per spec)     */
+  --on-surface-variant: #9a9a9a;   /* Secondary / metadata text                    */
+  --on-primary:         #003010;   /* Text on primary green CTAs                   */
+  --on-secondary:       #d0ffd8;   /* Text on dark green backgrounds               */
+  --on-tertiary:        #3d1e00;   /* Text on warm orange                          */
+  --on-background:      #e5e2e1;
+
+  /* ── Utility ──────────────────────────────────────────────────────── */
+  --outline:         #4d4d4d;      /* Standard outlines                            */
+  --outline-variant: #3c494e;      /* Ghost borders (15% opacity for subtlety)     */
+  --error:           #ffb4ab;
+  --on-error:        #690005;
+
+  /* ── Surface Tint (for backlight glow effects) ────────────────────── */
+  --surface-tint:    #00fc43;      /* Matches primary for consistent glow colour   */
+
+  /* ── Foreground alias ─────────────────────────────────────────────── */
+  --foreground: var(--on-surface);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BASE STYLES
+   ═══════════════════════════════════════════════════════════════════════ */
 
 body {
   background-color: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--on-surface);
+  font-family: Inter, Arial, Helvetica, sans-serif;
   overflow-x: hidden;
 }
 
-/* Hide all scrollbars globally */
+/* ── Hide all scrollbars globally ──────────────────────────────────── */
 * {
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
+*::-webkit-scrollbar { display: none; }
 
-*::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
-}
+/* ═══════════════════════════════════════════════════════════════════════
+   GLASSMORPHISM — "Glass & Gradient" Rule
+   Inner top glow simulates light catching the rim of optical glass.
+   ═══════════════════════════════════════════════════════════════════════ */
 
 .glass-panel {
-  background-color: rgba(0, 0, 0, 0.4);
+  background: rgba(32, 31, 31, 0.55);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06); /* rim light */
+}
+
+.obsidian-glass {
+  background: rgba(28, 27, 27, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(60, 73, 78, 0.2); /* ghost border */
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.glass-card {
+  background: rgba(42, 42, 42, 0.4);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(60, 73, 78, 0.2);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.7),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   GHOST BORDER — "No-Line" Rule enforcement
+   Use instead of dividers; provides catch-light on edges.
+   ═══════════════════════════════════════════════════════════════════════ */
+.ghost-border {
+  border: 1px solid rgba(60, 73, 78, 0.15);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   NEON GLOW EFFECTS — "Glowing Icons" spec
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.neon-glow-green {
+  filter: drop-shadow(0 0 6px #00fc43aa);
+}
+
+.neon-glow-box-green {
+  box-shadow: 0 0 20px rgba(0, 252, 67, 0.25);
+}
+
+/* Legacy cyan glow kept for backward compat */
+.neon-glow-cyan { box-shadow: 0 0 20px rgba(0, 252, 67, 0.15); }
+.text-glow-cyan { text-shadow: 0 0 12px rgba(0, 252, 67, 0.5); }
+.text-glow-green { text-shadow: 0 0 10px rgba(0, 252, 67, 0.6); }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   GRADIENT UTILITIES — "Glass & Gradient" Rule
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.gradient-primary {
+  background: linear-gradient(135deg, var(--primary), var(--primary-container));
+}
+
+.gradient-hero {
+  /* Deep obsidian with subtle green tint */
+  background: linear-gradient(to bottom right, #0d1a10, #0a1208, #080f08);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PROGRESS BARS — "Fluid Progress Bars" spec
+   ═══════════════════════════════════════════════════════════════════════ */
+.progress-track {
+  background: rgba(53, 52, 52, 0.5); /* surface_container_highest at 50% */
+}
+.progress-indicator {
+  background: linear-gradient(90deg, var(--primary), var(--secondary));
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   BOTTOM NAV — safe area for iOS
+   ═══════════════════════════════════════════════════════════════════════ */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ANIMATION KEYFRAMES
+   ═══════════════════════════════════════════════════════════════════════ */
+
+@keyframes pulse-glow-green {
+  0%, 100% { box-shadow: 0 0 20px rgba(0, 252, 67, 0.2); }
+  50%       { box-shadow: 0 0 40px rgba(0, 252, 67, 0.5); }
+}
+.animate-pulse-glow { animation: pulse-glow-green 2s ease-in-out infinite; }
+
+@keyframes spin-record {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }

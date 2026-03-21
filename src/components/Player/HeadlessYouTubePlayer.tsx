@@ -126,10 +126,27 @@ export function HeadlessYouTubePlayer() {
     }
   }, [seekTo, clearSeek]);
 
+  // Map our quality setting to YouTube's IFrame API quality labels:
+  // 'auto'  → 'default' (YouTube decides based on bandwidth)
+  // 'small' → 'small'   (144p or 240p — lowest data usage)
+  // 'medium'→ 'medium'  (360p — good enough audio, low data)
+  // 'large' → 'large'   (480p)
+  // 'hd720' → 'hd1080'  (1080p preferred; falls back to 720p/hd720 if unavailable)
+  const getYtQuality = (q: string): string => {
+    const map: Record<string, string> = {
+      auto: 'default',
+      small: 'small',
+      medium: 'medium',
+      large: 'large',
+      hd720: 'hd1080',
+    };
+    return map[q] || 'default';
+  };
+
   useEffect(() => {
     if (playerRef.current) {
       try {
-        playerRef.current.setPlaybackQuality(quality === 'auto' ? 'default' : quality);
+        playerRef.current.setPlaybackQuality(getYtQuality(quality));
       } catch (e) { /* noop */ }
     }
   }, [quality, currentTrack]);
@@ -217,7 +234,7 @@ export function HeadlessYouTubePlayer() {
     playerBridge.setPlayer(event.target);
     playerRef.current.setVolume(volume);
     try {
-      playerRef.current.setPlaybackQuality(quality === 'auto' ? 'default' : quality);
+      playerRef.current.setPlaybackQuality(getYtQuality(quality));
     } catch (_) { /* noop */ }
     if (isPlaying) playerRef.current.playVideo();
   };

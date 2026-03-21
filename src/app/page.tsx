@@ -1,26 +1,28 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { MusicFeed } from "@/components/Feed/MusicFeed";
-import { cn } from "@/lib/utils";
-import { TrendingUp, Mic2, Flame, Play, Library, Search } from "lucide-react";
 import { usePlayerStore } from "@/store/player.store";
+import { getTrendingMusic, YouTubeVideoItem } from "@/services/youtube.service";
+import { ChevronRight, Clock, Pause, MoreVertical, Zap, Smile, Music } from "lucide-react";
+import { cn } from "@/lib/utils";
 
-const REGIONS = [
-  "Trending", "Punjabi", "Bollywood", "English Pop", "Lofi Beats", "Hip Hop", 
-  "Acoustic", "Electronic", "R&B", "Classical", "Jazz", "K-Pop", "Latin", 
-  "Rock", "Sufi", "Retro", "Chillstep"
+/* ─── Static data — NO JSX at module scope ──────────────────────────────── */
+
+const GENRES = [
+  "Trending", "Punjabi", "Bollywood", "English Pop", "Lofi Beats",
+  "Hip Hop", "Acoustic", "Electronic", "R&B", "Classical",
+  "Jazz", "K-Pop", "Latin", "Rock", "Sufi", "Retro", "Chillstep",
 ];
 
-const ARTISTS = [
-  "Diljit Dosanjh", "Arijit Singh", "The Weeknd", "Karan Aujla", "Taylor Swift", 
-  "Badshah", "AP Dhillon", "Shreya Ghoshal", "Justin Bieber", "Ed Sheeran", 
-  "Dua Lipa", "Drake", "Eminem", "Atif Aslam", "Sonu Nigam", "Jubin Nautiyal",
-  "Kishore Kumar", "Lata Mangeshkar", "Neha Kakkar", "Guru Randhawa", "Billie Eilish",
-  "Post Malone", "Ariana Grande", "Bruno Mars", "Coldplay", "Imagine Dragons"
+const QUICK_TILES = [
+  { label: "Mood Booster", iconName: "smile", query: "mood booster upbeat music", accent: "var(--primary)" },
+  { label: "Pure Focus",   iconName: "zap",   query: "focus deep work music",     accent: "var(--tertiary)" },
+  { label: "Night Drive",  iconName: "music", query: "night drive synthwave music", accent: "#a78bfa" },
+  { label: "Chill Out",    iconName: "music", query: "chill lofi beats music",     accent: "#22d3ee" },
 ];
 
-const ARTIST_IMAGES: Record<string, string> = {
+export const ARTIST_IMAGES: Record<string, string> = {
   "Diljit Dosanjh": "https://upload.wikimedia.org/wikipedia/commons/e/e2/Diljit_Dosanjh.jpg",
   "Arijit Singh": "https://upload.wikimedia.org/wikipedia/commons/b/b7/Arijit_Singh_performance_at_Chandigarh_2025.jpg",
   "The Weeknd": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a0/The_Weeknd_Portrait_by_Brian_Ziff.jpg/960px-The_Weeknd_Portrait_by_Brian_Ziff.jpg",
@@ -46,259 +48,325 @@ const ARTIST_IMAGES: Record<string, string> = {
   "Coldplay": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cc/ColdplayWembley120925_%28cropped%29.jpg/960px-ColdplayWembley120925_%28cropped%29.jpg",
   "Imagine Dragons": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Imagine_Dragons_-_Uncasville_CT_-_November_2017_-_2.jpg/960px-Imagine_Dragons_-_Uncasville_CT_-_November_2017_-_2.jpg",
   "Badshah": "https://upload.wikimedia.org/wikipedia/commons/c/cb/Badshah_snapped_promoting_their_song_%28cropped%29.jpg",
-  "Drake": "https://upload.wikimedia.org/wikipedia/commons/1/15/Drake_at_The_Carter_Effect_2017_%2836818935200%29_%28cropped%29.jpg"
+  "Drake": "https://upload.wikimedia.org/wikipedia/commons/1/15/Drake_at_The_Carter_Effect_2017_%2836818935200%29_%28cropped%29.jpg",
 };
 
-const getInitials = (name: string) => {
-  return name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
-};
+const ARTIST_NAMES = Object.keys(ARTIST_IMAGES);
+
+/* ─── Helpers & Sub-components ───────────────────────────────────────────── */
+
+const getInitials = (name: string) =>
+  name.split(" ").slice(0, 2).map((n) => n[0]).join("").toUpperCase();
+
+function formatTime(s: number) {
+  if (!s || isNaN(s)) return "";
+  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+}
+
+function TileIcon({ name, style }: { name: string; style: React.CSSProperties }) {
+  if (name === "smile") return <Smile className="w-6 h-6" style={style} />;
+  if (name === "zap")   return <Zap   className="w-6 h-6" style={style} />;
+  return                       <Music className="w-6 h-6" style={style} />;
+}
+
+/* ─── Home Page ─────────────────────────────────────────────────────────── */
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<string>("Trending");
-  const [artistSearch, setArtistSearch] = useState("");
-  const [mounted, setMounted] = useState(false);
-  const [currentSlide, setCurrentSlide] = useState(0);
+  const [activeTab, setActiveTab] = useState("Trending");
+  const [mounted,   setMounted]   = useState(false);
+  const [trendingTracks, setTrendingTracks] = useState<YouTubeVideoItem[]>([]);
+  const [trendingLimit, setTrendingLimit] = useState(12);
 
-  const recentTracks = usePlayerStore((state) => state.recentTracks);
-  const playTrack = usePlayerStore((state) => state.playTrack);
-  const setQueue = usePlayerStore((state) => state.setQueue);
-  const quality = usePlayerStore((state) => state.quality);
+  const recentTracks = usePlayerStore((s) => s.recentTracks);
+  const currentTrack = usePlayerStore((s) => s.currentTrack);
+  const isPlaying    = usePlayerStore((s) => s.isPlaying);
+  const duration     = usePlayerStore((s) => s.duration);
+  const playTrack    = usePlayerStore((s) => s.playTrack);
+  const setQueue     = usePlayerStore((s) => s.setQueue);
 
   useEffect(() => {
     setMounted(true);
+    getTrendingMusic('IN')
+      .then(res => setTrendingTracks(res.items))
+      .catch(e => console.error("Error fetching trending header:", e));
   }, []);
 
-  // Determine the actual API query based on the active tab
-  const activeQuery = activeTab === "Trending" ? undefined : `${activeTab} music`;
+  const activeQuery   = activeTab === "Trending" ? undefined : `${activeTab} music`;
+  const featuredCards = mounted && trendingTracks.length > 0 ? trendingTracks.slice(0, trendingLimit) : [];
+  console.log(trendingTracks)
 
-  const handleArtistSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (artistSearch.trim()) {
-      setActiveTab(artistSearch.trim());
-    }
-  };
+  const getId = (t: any) => typeof t.id === "string" ? t.id : t.id.videoId;
 
-  const filteredArtists = ARTISTS.filter(a => a.toLowerCase().includes(artistSearch.toLowerCase()));
-  const featuredTrack = mounted && recentTracks && recentTracks.length > 0 ? recentTracks[0] : null;
-
-  const getThumbnailUrl = (track: any) => {
-    if (!track) return '';
-    const t = track.snippet.thumbnails;
-    switch(quality) {
-      case 'small': return t.default?.url || t.medium?.url;
-      case 'medium': return t.medium?.url || t.high?.url;
-      case 'hd720': return t.maxres?.url || t.high?.url || t.medium?.url;
-      case 'large': return t.high?.url || t.medium?.url;
-      case 'auto':
-      default: return t.medium?.url || t.high?.url;
-    }
-  };
-
-  // Build Carousel Slides
-  const slides = [];
-
-  // Slide 1: Original Featured Experience
-  slides.push(
-    <div className="relative z-10 max-w-2xl px-2" key="s1">
-      <span className="bg-teal-500/20 text-teal-300 text-xs font-bold px-3 py-1.5 rounded-full tracking-widest uppercase mb-6 inline-block shadow-inner shadow-teal-500/20">Featured Experience</span>
-      <h1 className="text-4xl md:text-6xl font-black text-white mb-4 tracking-tight drop-shadow-lg">Vibe Shift</h1>
-      <p className="text-zinc-300 text-sm md:text-lg mb-8 max-w-md leading-relaxed drop-shadow font-medium">Experience the next evolution of sound. A cinematic journey through the neon-soaked streets of tomorrow.</p>
-      <div className="flex items-center gap-4">
-        <button 
-          onClick={() => setActiveTab('Synthwave Neon Music')} 
-          className="bg-white text-black px-6 py-3 rounded-full font-bold flex items-center gap-2 hover:scale-105 active:scale-95 transition-transform shadow-lg shadow-white/20"
-        >
-          <Play className="w-5 h-5 fill-current text-black" /> Watch Now
-        </button>
-      </div>
-    </div>
-  );
-
-  // Slide 2: Recently Played Track
-  if (featuredTrack) {
-    slides.push(
-      <div className="relative z-10 max-w-4xl flex flex-col md:flex-row gap-8 items-center md:items-start text-center md:text-left px-2" key="s2">
-        <img 
-           src={getThumbnailUrl(featuredTrack)} 
-           className="w-40 h-40 md:w-56 md:h-56 rounded-2xl shadow-[0_0_40px_rgba(0,0,0,0.8)] object-cover ring-1 ring-white/10 group-hover:scale-105 transition-transform duration-700" 
-           alt="Featured Track" 
-        />
-        <div className="flex flex-col flex-1 justify-center align-center md:align-start mt-4 md:mt-2">
-          <span className="bg-purple-500/20 text-purple-300 text-xs font-bold px-3 py-1.5 rounded-full tracking-widest uppercase mb-4 w-fit shadow-inner shadow-purple-500/20 mx-auto md:mx-0">Recently Played</span>
-          <h1 className="text-3xl md:text-5xl font-black text-white mb-2 tracking-tight drop-shadow-lg line-clamp-2 md:leading-tight">{featuredTrack.snippet.title}</h1>
-          <p className="text-zinc-300 text-sm md:text-md mb-6 max-w-md leading-relaxed drop-shadow font-medium line-clamp-2">{featuredTrack.snippet.channelTitle}</p>
-          <div className="flex items-center gap-4 justify-center md:justify-start">
-            <button 
-              onClick={() => { setQueue([featuredTrack]); playTrack(featuredTrack); }} 
-              className="bg-white text-black px-6 py-3 rounded-full font-bold flex items-center gap-2 hover:scale-105 active:scale-95 transition-transform shadow-lg shadow-white/20"
-            >
-              <Play className="w-5 h-5 fill-current text-black" /> Play Again
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Slide 3: Trending Chart Promotion
-  slides.push(
-    <div className="relative z-10 max-w-2xl px-2" key="s3">
-      <span className="bg-orange-500/20 text-orange-300 text-xs font-bold px-3 py-1.5 rounded-full tracking-widest uppercase mb-6 inline-block shadow-inner shadow-orange-500/20">Global Top Charts</span>
-      <h1 className="text-4xl md:text-6xl font-black text-white mb-4 tracking-tight drop-shadow-lg">Trending Now</h1>
-      <p className="text-zinc-300 text-sm md:text-lg mb-8 max-w-md leading-relaxed drop-shadow font-medium">Discover the tracks completely dominating the airwaves across the planet right now.</p>
-      <div className="flex items-center gap-4">
-        <button 
-          onClick={() => setActiveTab('Trending')} 
-          className="bg-gradient-to-r from-orange-500 to-red-600 text-white px-6 py-3 rounded-full font-bold flex items-center gap-2 hover:scale-105 active:scale-95 transition-transform shadow-lg shadow-orange-500/30"
-        >
-          <Flame className="w-5 h-5 fill-current" /> Explore Charts
-        </button>
-      </div>
-    </div>
-  );
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % slides.length);
-    }, 5000);
-    return () => clearInterval(timer);
-  }, [slides.length]);
+  // Rotating spotlight — picks a random real artist on each mount
+  const spotlight = useMemo(() => {
+    const idx = Math.floor(Math.random() * ARTIST_NAMES.length);
+    const name = ARTIST_NAMES[idx];
+    return { name, image: ARTIST_IMAGES[name] };
+  }, []);
 
   return (
-    <main className="min-h-screen pb-32">
-      <section className="max-w-7xl mx-auto pt-6 px-4">
-        
-        {/* Carousel Hero Banner */}
-        <div className="w-full rounded-3xl bg-gradient-to-br from-[#1a0b2e] via-[#2d1155] to-[#120428] p-8 md:p-12 mb-10 overflow-hidden relative shadow-2xl border border-white/5 group min-h-[460px] md:min-h-[400px] flex md:items-center">
-          <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-purple-500/20 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/3 group-hover:bg-purple-500/30 transition-colors duration-700" />
-          <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-blue-500/10 rounded-full blur-[100px] translate-y-1/2 -translate-x-1/4" />
-          
-          <div className="relative w-full transition-opacity duration-1000 ease-in-out animate-in fade-in zoom-in-95" key={currentSlide}>
-            {slides[currentSlide]}
-          </div>
+    <main className="min-h-screen pb-36" style={{ background: 'var(--background)' }}>
 
-          {/* Carousel Pagination Dots */}
-          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 z-20">
-            {slides.map((_, i) => (
-              <button 
-                key={i} 
-                onClick={() => setCurrentSlide(i)} 
-                className={cn(
-                  "h-1.5 rounded-full transition-all duration-500 hover:bg-white", 
-                  currentSlide === i ? "w-8 bg-purple-400 shadow-[0_0_10px_purple]" : "w-2 bg-white/20"
-                )} 
-                aria-label={`Go to slide ${i + 1}`}
-              />
-            ))}
-          </div>
+      {/* ══ 1. GLOBAL TRENDING HEADER ═══════════════════════════════════════ */}
+      <section className="px-4 pt-1 pb-5">
+        <p className="text-[10px] font-black uppercase tracking-[0.22em] mb-1"
+           style={{ color: 'var(--on-surface-variant)' }}>
+          Global Trending
+        </p>
+        <div className="flex items-end justify-between">
+          <h1 className="text-[2rem] font-black leading-none tracking-tight"
+              style={{ color: 'var(--on-surface)' }}>
+            Top 50 Hits
+          </h1>
+          <button
+            onClick={() => setTrendingLimit(prev => prev === 12 ? 50 : 12)}
+            className="flex items-center gap-1 text-[11px] font-black uppercase tracking-widest hover:opacity-80 transition-opacity"
+            style={{ color: 'var(--primary)' }}
+          >
+            {trendingLimit === 12 ? "Load More" : "Show Less"} <ChevronRight className="w-3.5 h-3.5" />
+          </button>
         </div>
-
-        {/* Categories / Genres */}
-        <div className="mb-10 flex flex-col gap-3">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-purple-400" /> Discover Modes
-            </h2>
-          </div>
-          <div className="flex items-center gap-2 overflow-x-auto pb-4 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] whitespace-nowrap mask-gradient-x">
-            {REGIONS.map(region => (
-              <button
-                key={region}
-                onClick={() => setActiveTab(region)}
-                className={cn(
-                  "px-5 py-2.5 rounded-full font-semibold text-sm transition-all shadow-md shrink-0",
-                  activeTab === region 
-                    ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-purple-500/20 shadow-lg" 
-                    : "bg-[#18181b] hover:bg-[#27272a] text-zinc-300 border border-white/5 hover:border-white/10"
-                )}
-              >
-                {region}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Top Artists Segment */}
-        <div className="mb-10 flex flex-col gap-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
-            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-              <Mic2 className="w-5 h-5 text-indigo-400" /> Top Artists
-            </h2>
-            <form onSubmit={handleArtistSearchSubmit} className="relative w-full md:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
-              <input 
-                type="text"
-                placeholder="Search any artist..."
-                value={artistSearch}
-                onChange={(e) => setArtistSearch(e.target.value)}
-                className="w-full bg-[#18181b] border border-white/10 text-white text-sm rounded-full pl-9 pr-4 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all placeholder:text-zinc-500"
-              />
-              <button type="submit" className="hidden" />
-            </form>
-          </div>
-          
-          <div className="flex items-center gap-6 overflow-x-auto pb-6 pt-2 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] mask-gradient-x">
-            {(artistSearch.trim() ? filteredArtists : ARTISTS).map(artist => (
-              <button
-                 key={artist}
-                 onClick={() => setActiveTab(artist)}
-                 className={cn(
-                   "flex flex-col items-center gap-3 shrink-0 group w-[90px] transition-opacity",
-                   activeTab === artist ? "opacity-100" : "hover:opacity-100"
-                 )}
-              >
-                 <div className={cn(
-                   "w-20 h-20 md:w-24 md:h-24 rounded-full shadow-2xl overflow-hidden flex items-center justify-center p-[2px] transition-all",
-                   activeTab === artist 
-                     ? "bg-gradient-to-br from-purple-500 to-indigo-600 shadow-[0_0_20px_rgba(168,85,247,0.3)] scale-105" 
-                     : "bg-[#27272a] border border-white/5 group-hover:border-white/20 group-hover:scale-105"
-                 )}>
-                    {ARTIST_IMAGES[artist] ? (
-                      <img 
-                        src={ARTIST_IMAGES[artist]} 
-                        alt={artist} 
-                        className="w-full h-full rounded-full object-cover shadow-inner"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div className={cn(
-                        "relative w-full h-full rounded-full flex flex-col items-center justify-center text-center shadow-inner",
-                        activeTab === artist ? "bg-[#18181b]" : "bg-[#121212] group-hover:bg-[#18181b] transition-colors"
-                      )}>
-                        <Mic2 className={cn("absolute inset-0 m-auto w-10 h-10 opacity-[0.07]", activeTab === artist ? "text-purple-400" : "text-zinc-400")} />
-                        <span className={cn(
-                          "relative z-10 text-xl md:text-2xl font-black drop-shadow-md tracking-tighter",
-                          activeTab === artist ? "text-white" : "text-zinc-500 group-hover:text-zinc-300"
-                        )}>
-                          {getInitials(artist)}
-                        </span>
-                      </div>
-                    )}
-                 </div>
-                 <span className={cn(
-                   "text-xs md:text-sm font-bold text-center truncate w-full transition-colors",
-                   activeTab === artist ? "text-purple-400" : "text-zinc-300 group-hover:text-white"
-                 )}>
-                   {artist}
-                 </span>
-              </button>
-            ))}
-            {artistSearch.trim() && filteredArtists.length === 0 && (
-              <div className="flex items-center justify-center w-full py-8 text-zinc-500 text-sm">
-                Press Enter to globally search for "{artistSearch}"
-              </div>
-            )}
-          </div>
-        </div>
-
       </section>
 
-      {/* Main Music Feed Grid/List */}
-      <section className="max-w-7xl mx-auto py-2">
-        <div className="px-4 mb-2 flex items-center justify-between">
-          <h2 className="text-xl md:text-2xl font-black text-white flex items-center gap-2 drop-shadow-md tracking-tight">
-            <Flame className="w-6 h-6 text-orange-400 drop-shadow-[0_0_10px_rgba(251,146,60,0.5)] fill-orange-400/20" />
-            {activeTab === "Trending" ? "Trending Now" : `${activeTab}`}
+      {/* ══ 2. FEATURED ALBUM CAROUSEL ══════════════════════════════════════ */}
+      {featuredCards.length > 0 && (
+        <section className="mb-7">
+          <div className="flex gap-3 overflow-x-auto px-4 pb-1" style={{ scrollSnapType: 'x mandatory' }}>
+            {featuredCards.map((track, i) => {
+              const thumb = track.snippet.thumbnails.high?.url || track.snippet.thumbnails.medium?.url;
+              const id = getId(track);
+              const curId = currentTrack ? getId(currentTrack) : null;
+              const active = curId === id;
+
+              return (
+                <button
+                  key={id}
+                  onClick={() => { setQueue(trendingTracks); playTrack(track); }}
+                  className="relative shrink-0 rounded-2xl overflow-hidden text-left group w-36 sm:w-40 md:w-48 aspect-[4/5]"
+                  style={{
+                    scrollSnapAlign: 'start',
+                    boxShadow: active ? `0 0 0 2px var(--primary)` : 'none',
+                  }}
+                >
+                  <img src={thumb} alt={track.snippet.title}
+                       className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
+                  <div className="absolute inset-0" style={{
+                    background: 'linear-gradient(to top, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.1) 50%, transparent 100%)'
+                  }} />
+                  <span className="absolute bottom-16 left-3 text-6xl font-black leading-none select-none"
+                        style={{ color: 'rgba(255,255,255,0.18)', fontVariantNumeric: 'tabular-nums' }}>
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  {active && isPlaying && (
+                    <div className="absolute top-3 right-3 w-5 h-5 rounded-full flex items-center justify-center"
+                         style={{ background: 'var(--primary)' }}>
+                      <Pause className="w-3 h-3 fill-current" style={{ color: 'var(--on-primary)' }} />
+                    </div>
+                  )}
+                  <div className="absolute bottom-0 left-0 right-0 p-3">
+                    <p className="font-bold text-sm line-clamp-2 leading-tight" style={{ color: 'var(--on-surface)' }}>
+                      {track.snippet.title}
+                    </p>
+                    <p className="text-xs font-semibold mt-0.5 truncate" style={{ color: 'var(--primary)' }}>
+                      {track.snippet.channelTitle}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ══ 3. RECENTLY PLAYED ══════════════════════════════════════════════ */}
+      {mounted && recentTracks.length > 0 && (
+        <section className="px-4 mb-7">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-black" style={{ color: 'var(--on-surface)' }}>Recently Played</h2>
+            <Clock className="w-4 h-4" style={{ color: 'var(--on-surface-variant)' }} />
+          </div>
+          <div className="obsidian-glass rounded-2xl overflow-hidden">
+            {recentTracks.slice(0, 5).map((track, idx) => {
+              const id = getId(track);
+              const thumb = track.snippet.thumbnails.medium?.url || track.snippet.thumbnails.default?.url;
+              const curId = currentTrack ? getId(currentTrack) : null;
+              const active = curId === id;
+              return (
+                <div key={id}>
+                  {idx > 0 && <div className="mx-4" style={{ height: 1, background: 'rgba(60,73,78,0.15)' }} />}
+                  <div
+                    className="flex items-center gap-3 px-4 py-3 cursor-pointer group transition-colors"
+                    style={{ background: active ? 'rgba(0,252,67,0.06)' : 'transparent' }}
+                    onClick={() => { setQueue(recentTracks); playTrack(track); }}
+                  >
+                    <div className="relative w-12 h-12 rounded-xl overflow-hidden shrink-0"
+                         style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>
+                      <img src={thumb} alt={track.snippet.title} className="w-full h-full object-cover" />
+                      {active && isPlaying && (
+                        <div className="absolute inset-0 flex items-center justify-center"
+                             style={{ background: 'rgba(0,0,0,0.5)' }}>
+                          <Pause className="w-4 h-4 fill-current" style={{ color: 'var(--primary)' }} />
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm line-clamp-1"
+                         style={{ color: active ? 'var(--primary)' : 'var(--on-surface)' }}>
+                        {track.snippet.title}
+                      </p>
+                      <p className="text-xs truncate mt-0.5"
+                         style={{ color: 'var(--primary)', opacity: active ? 1 : 0.7 }}>
+                        {track.snippet.channelTitle}
+                      </p>
+                    </div>
+                    <span className="text-xs font-mono shrink-0" style={{ color: 'var(--on-surface-variant)' }}>
+                      {active && duration > 0 ? formatTime(duration) : ""}
+                    </span>
+                    <button className="p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                            style={{ color: 'var(--on-surface-variant)' }} onClick={(e) => e.stopPropagation()}>
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ══ 4. TOP ARTISTS — horizontal scroll ══════════════════════════════ */}
+      <section className="mb-7">
+        <div className="flex items-center justify-between px-4 mb-3">
+          <h2 className="text-base font-black" style={{ color: 'var(--on-surface)' }}>Top Artists</h2>
+          {/* <button className="text-[11px] font-bold" style={{ color: 'var(--primary)' }}>See All</button> */}
+        </div>
+        <div className="flex gap-4 overflow-x-auto px-4 pb-1">
+          {ARTIST_NAMES.map((name) => (
+            <button
+              key={name}
+              onClick={() => setActiveTab(name)}
+              className="flex flex-col items-center gap-2 shrink-0 w-[72px] group"
+            >
+              <div
+                className="w-16 h-16 rounded-full overflow-hidden transition-all group-hover:ring-2"
+                style={{
+                  boxShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                  // ringColor: 'var(--primary)',
+                }}
+              >
+                <img src={ARTIST_IMAGES[name]} alt={name}
+                     className="w-full h-full object-cover"
+                     onError={(e) => {
+                       (e.target as HTMLImageElement).style.display = 'none';
+                       (e.target as HTMLImageElement).parentElement!.innerHTML =
+                         `<div class="w-full h-full flex items-center justify-center text-xs font-black" style="background:var(--surface-container-high);color:var(--on-surface-variant)">${getInitials(name)}</div>`;
+                     }}
+                />
+              </div>
+              <span className="text-[10px] text-center leading-tight line-clamp-2 group-hover:brightness-125 transition-all"
+                    style={{ color: 'var(--on-surface-variant)' }}>
+                {name}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      {/* ══ 5. QUICK DISCOVERY ═══════════════════════════════════════════════ */}
+      <section className="px-4 mb-7">
+        <h2 className="text-base font-black mb-3" style={{ color: 'var(--on-surface)' }}>Quick Discovery</h2>
+        <div className="grid grid-cols-2 gap-3">
+          {QUICK_TILES.map((tile) => {
+            const active = activeTab === tile.query;
+            return (
+              <button
+                key={tile.label}
+                onClick={() => setActiveTab(tile.query)}
+                className="relative flex flex-col justify-end p-4 rounded-2xl text-left h-[110px] overflow-hidden transition-all active:scale-[0.97]"
+                style={{
+                  background: active ? 'rgba(0,252,67,0.12)' : 'var(--surface-container)',
+                  border: active ? '1px solid rgba(0,252,67,0.35)' : '1px solid rgba(60,73,78,0.15)',
+                  boxShadow: active ? '0 0 20px rgba(0,252,67,0.1)' : 'none',
+                }}
+              >
+                <TileIcon name={tile.iconName} style={{ color: tile.accent }} />
+                <span className="text-sm font-black mt-2 leading-tight" style={{ color: 'var(--on-surface)' }}>
+                  {tile.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ══ 6. ARTIST SPOTLIGHT — real rotating artist ════════════════════════ */}
+      <section className="px-4 mb-7">
+        <div
+          className="flex items-center gap-4 p-4 rounded-2xl relative overflow-hidden"
+          style={{ background: 'var(--surface-container)', border: '1px solid rgba(60,73,78,0.15)' }}
+        >
+          <div className="absolute -left-4 top-0 bottom-0 w-24 rounded-full blur-3xl opacity-20"
+               style={{ background: 'var(--primary)' }} />
+          <img
+            src={spotlight.image}
+            alt={spotlight.name}
+            className="w-14 h-14 rounded-full object-cover shrink-0 relative z-10"
+            style={{ boxShadow: '0 0 0 2px rgba(0,252,67,0.3)' }}
+            onError={(e) => {
+              (e.target as HTMLImageElement).style.display = 'none';
+            }}
+          />
+          <div className="flex-1 min-w-0 relative z-10">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[9px] font-black uppercase tracking-widest px-2 py-0.5 rounded-full"
+                    style={{ background: 'var(--primary)', color: 'var(--on-primary)' }}>
+                Spotlight
+              </span>
+            </div>
+            <p className="font-black text-sm truncate" style={{ color: 'var(--on-surface)' }}>{spotlight.name}</p>
+            <p className="text-xs" style={{ color: 'var(--on-surface-variant)' }}>Artist on SonicView</p>
+          </div>
+          <button
+            onClick={() => setActiveTab(spotlight.name)}
+            className="px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-wider border transition-all hover:opacity-80 shrink-0 relative z-10"
+            style={{ borderColor: 'var(--on-surface-variant)', color: 'var(--on-surface)' }}
+          >
+            Play
+          </button>
+        </div>
+      </section>
+
+      {/* ══ 7. GENRE PILLS ═══════════════════════════════════════════════════ */}
+      <section className="mb-5">
+        <div className="flex gap-2 overflow-x-auto px-4 pb-1">
+          {GENRES.map((g) => {
+            const active = activeTab === g || (g === "Trending" && activeTab === "Trending");
+            return (
+              <button
+                key={g}
+                onClick={() => setActiveTab(g)}
+                className="px-4 py-2 rounded-full text-[11px] font-bold shrink-0 transition-all"
+                style={{
+                  background: active ? 'var(--primary)' : 'var(--surface-container)',
+                  color:      active ? 'var(--on-primary)' : 'var(--on-surface-variant)',
+                  border:     active ? 'none' : '1px solid rgba(60,73,78,0.2)',
+                  boxShadow:  active ? '0 0 14px rgba(0,252,67,0.35)' : 'none',
+                }}
+              >
+                {g}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* ══ 8. FEED ══════════════════════════════════════════════════════════ */}
+      <section>
+        <div className="px-4 mb-3">
+          <h2 className="text-base font-black" style={{ color: 'var(--on-surface)' }}>
+            {activeTab === "Trending"
+              ? "Trending Now"
+              : activeTab.replace(/ (music|beats)$/, "")}
           </h2>
         </div>
         <MusicFeed query={activeQuery} />

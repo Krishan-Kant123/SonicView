@@ -1,3 +1,5 @@
+import { useSettingsStore } from '@/store/settings.store';
+
 export interface YouTubeVideoSnippet {
   title: string;
   channelTitle: string;
@@ -23,7 +25,11 @@ export interface YouTubeResponse {
   nextPageToken?: string;
 }
 
-const API_KEY = process.env.NEXT_PUBLIC_YOUTUBE_API_KEY;
+const getApiKey = () => {
+  if (typeof window === 'undefined') return '';
+  return useSettingsStore.getState().apiKey || '';
+};
+
 const BASE_URL = 'https://www.googleapis.com/youtube/v3';
 
 // Cache to save API Quota
@@ -54,19 +60,25 @@ async function fetchWithCache(url: string, cacheKey: string): Promise<YouTubeRes
 }
 
 export async function getTrendingMusic(regionCode: string = 'US', pageToken?: string): Promise<YouTubeResponse> {
-  let url = `${BASE_URL}/videos?part=snippet,statistics&chart=mostPopular&videoCategoryId=10&regionCode=${regionCode}&maxResults=12&key=${API_KEY}`;
+  const API_KEY = getApiKey();
+  if (!API_KEY) throw new Error('YouTube API key not configured');
+  let url = `${BASE_URL}/videos?part=snippet,statistics&chart=mostPopular&videoCategoryId=10&regionCode=${regionCode}&maxResults=50&key=${API_KEY}`;
   if (pageToken) url += `&pageToken=${pageToken}`;
   return fetchWithCache(url, `trending_${regionCode}_${pageToken || 'first'}`);
 }
 
 export async function searchMusic(query: string, pageToken?: string): Promise<YouTubeResponse> {
+  const API_KEY = getApiKey();
+  if (!API_KEY) throw new Error('YouTube API key not configured');
   // videoCategoryId=10 and topicId=/m/04rlf for strict music filtering
-  let url = `${BASE_URL}/search?part=snippet&q=${encodeURIComponent(query)}&type=video&videoCategoryId=10&topicId=/m/04rlf&maxResults=12&key=${API_KEY}`;
+  let url = `${BASE_URL}/search?part=snippet&q=${encodeURIComponent(query)}&type=video&videoCategoryId=10&topicId=/m/04rlf&maxResults=50&key=${API_KEY}`;
   if (pageToken) url += `&pageToken=${pageToken}`;
   return fetchWithCache(url, `search_${query}_${pageToken || 'first'}`);
 }
 
 export async function getRelatedTracks(channelTitle: string): Promise<YouTubeResponse> {
+  const API_KEY = getApiKey();
+  if (!API_KEY) throw new Error('YouTube API key not configured');
   // FR-05.1 Fetch 5-10 related videos for the smart queue
   // Since relatedToVideoId is deprecated and throws 400 Bad Request randomly, we safely fallback to an artist query
   const url = `${BASE_URL}/search?part=snippet&q=${encodeURIComponent(channelTitle + ' songs')}&type=video&videoCategoryId=10&maxResults=12&key=${API_KEY}`;

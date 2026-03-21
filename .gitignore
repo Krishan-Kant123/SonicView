@@ -51,3 +51,5 @@ node_modules
 /artists_dict.json
 /fetch-artists.js
 /fix-artists.js
+srs.md
+DESIGN.md
