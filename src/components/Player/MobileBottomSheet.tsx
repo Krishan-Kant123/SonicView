@@ -8,12 +8,15 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AddToPlaylistModal } from '@/components/Playlists/AddToPlaylistModal';
+import { usePlaylistStore } from '@/store/playlist.store';
 import { playerBridge } from '@/lib/playerBridge';
 
 export function MobileBottomSheet() {
   const [isExpanded, setIsExpanded] = useState(false);
   const [showPlaylistModal, setShowPlaylistModal] = useState(false);
-  const [liked, setLiked] = useState(false);
+
+  const toggleLike = usePlaylistStore((s) => s.toggleLike);
+  const isLiked    = usePlaylistStore((s) => s.isLiked);
 
   const currentTrack  = usePlayerStore((s) => s.currentTrack);
   const isPlaying     = usePlayerStore((s) => s.isPlaying);
@@ -196,11 +199,11 @@ export function MobileBottomSheet() {
                   </p>
                 </div>
                 <button
-                  onClick={() => setLiked(!liked)}
+                  onClick={() => toggleLike(currentTrack)}
                   className="w-10 h-10 flex items-center justify-center rounded-full transition-all"
-                  style={{ color: liked ? 'var(--primary)' : 'rgba(255,255,255,0.3)' }}
+                  style={{ color: isLiked(typeof currentTrack.id === 'string' ? currentTrack.id : currentTrack.id.videoId) ? 'var(--primary)' : 'rgba(255,255,255,0.3)' }}
                 >
-                  <Heart className="w-6 h-6" style={{ fill: liked ? 'var(--primary)' : 'none' }} />
+                  <Heart className="w-6 h-6" style={{ fill: isLiked(typeof currentTrack.id === 'string' ? currentTrack.id : currentTrack.id.videoId) ? 'var(--primary)' : 'none' }} />
                 </button>
                 <button
                   onClick={() => setShowPlaylistModal(true)}
@@ -288,8 +291,8 @@ export function MobileBottomSheet() {
 
               {/* Up Next List */}
               {queue.length > 0 && (
-                <div className="mt-4 shrink-0 pb-12" id="up-next-section">
-                  <div className="flex items-center justify-between mb-4">
+                <div className="mt-4 shrink-0" id="up-next-section">
+                  <div className="flex items-center justify-between mb-3">
                     <h3 className="text-[11px] font-black uppercase tracking-widest" style={{ color: 'var(--on-surface-variant)' }}>
                       Up Next in Queue
                     </h3>
@@ -298,48 +301,36 @@ export function MobileBottomSheet() {
                       <ShuffleIcon className="w-3.5 h-3.5" /> {isShuffle ? 'Shuffled' : 'Shuffle'}
                     </button>
                   </div>
-                  
-                  <div className="flex flex-col gap-3">
-                    {queue.slice(Math.max(0, queue.findIndex(t => (typeof t.id === 'string' ? t.id : t.id.videoId) === (typeof currentTrack.id === 'string' ? currentTrack.id : currentTrack.id.videoId)) + 1)).map((track, i) => {
-                      const trackId = typeof track.id === 'string' ? track.id : track.id.videoId;
-                      return (
-                        <div key={i} className="flex items-center gap-3 p-3 rounded-2xl cursor-pointer group transition-all"
-                             style={{ background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.05)' }}
-                             onClick={() => { playerBridge.play(); usePlayerStore.getState().playTrack(track); }}>
-                          <img src={track.snippet.thumbnails.default?.url} alt="thumb" className="w-12 h-12 rounded-lg object-cover relative z-10 shadow-md" />
-                          <div className="flex-1 min-w-0 pr-2">
-                            <p className="text-sm font-bold truncate group-hover:text-primary transition-colors" style={{ color: 'var(--on-surface)' }}>{track.snippet.title}</p>
-                            <p className="text-xs truncate" style={{ color: 'var(--on-surface-variant)' }}>{track.snippet.channelTitle}</p>
+
+                  <div className="rounded-2xl overflow-hidden border" style={{ background: 'rgba(255,255,255,0.02)', borderColor: 'rgba(255,255,255,0.06)' }}>
+                    <div className="overflow-y-auto flex flex-col gap-1 p-2" style={{ maxHeight: '280px' }}>
+                      {queue.slice(Math.max(0, queue.findIndex(t => (typeof t.id === 'string' ? t.id : t.id.videoId) === (typeof currentTrack.id === 'string' ? currentTrack.id : currentTrack.id.videoId)) + 1)).map((track, i) => {
+                        const trackId = typeof track.id === 'string' ? track.id : track.id.videoId;
+                        return (
+                          <div key={i} className="flex items-center gap-3 p-2.5 rounded-xl cursor-pointer group transition-all hover:bg-white/5"
+                               onClick={() => { playerBridge.play(); usePlayerStore.getState().playTrack(track); }}>
+                            <img src={track.snippet.thumbnails.default?.url} alt="thumb" className="w-10 h-10 rounded-lg object-cover shrink-0 shadow-md" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-bold truncate group-hover:text-primary transition-colors" style={{ color: 'var(--on-surface)' }}>{track.snippet.title}</p>
+                              <p className="text-xs truncate" style={{ color: 'var(--on-surface-variant)' }}>{track.snippet.channelTitle}</p>
+                            </div>
+                            <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={(e) => { e.stopPropagation(); moveTrackToNext(trackId); }}
+                                      className="p-1.5 rounded-full hover:bg-white/10" style={{ color: 'var(--on-surface-variant)' }} title="Play Next">
+                                <ArrowUpToLine className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={(e) => { e.stopPropagation(); setQueue(queue.filter(t => (typeof t.id === 'string' ? t.id : t.id.videoId) !== trackId)); }}
+                                      className="p-1.5 rounded-full hover:bg-red-500/20 hover:text-red-400" style={{ color: 'var(--on-surface-variant)' }} title="Remove">
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
-                          
-                          {/* Queue Controls */}
-                          <div className="flex items-center gap-1 shrink-0">
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); moveTrackToNext(trackId); }}
-                              className="p-2 lg:opacity-0 group-hover:opacity-100 transition-opacity rounded-full hover:bg-white/10"
-                              style={{ color: 'var(--on-surface-variant)' }}
-                              title="Play Next"
-                            >
-                              <ArrowUpToLine className="w-4 h-4" />
-                            </button>
-                            <button 
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                setQueue(queue.filter(t => (typeof t.id === 'string' ? t.id : t.id.videoId) !== trackId));
-                              }}
-                              className="p-2 lg:opacity-0 group-hover:opacity-100 transition-opacity rounded-full hover:bg-red-500/20 hover:text-red-400"
-                              style={{ color: 'var(--on-surface-variant)' }}
-                              title="Remove from queue"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      )
-                    })}
-                    {queue.length === 1 || queue.findIndex(t => (typeof t.id === 'string' ? t.id : t.id.videoId) === (typeof currentTrack.id === 'string' ? currentTrack.id : currentTrack.id.videoId)) === queue.length - 1 ? (
-                      <p className="text-xs mt-4 italic text-center" style={{ color: 'var(--on-surface-variant)' }}>End of queue.</p>
-                    ) : null}
+                        );
+                      })}
+                      {queue.findIndex(t => (typeof t.id === 'string' ? t.id : t.id.videoId) === (typeof currentTrack.id === 'string' ? currentTrack.id : currentTrack.id.videoId)) >= queue.length - 1 && (
+                        <p className="text-xs py-3 italic text-center" style={{ color: 'var(--on-surface-variant)' }}>End of queue.</p>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}

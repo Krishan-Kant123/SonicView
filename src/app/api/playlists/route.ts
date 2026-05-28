@@ -20,13 +20,9 @@ export async function POST(req: Request) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { playlists } = await req.json(); // Array of playlists from local storage
-  
-  if (!playlists || !Array.isArray(playlists)) {
-    return NextResponse.json({ error: 'Invalid data' }, { status: 400 });
-  }
+  const { playlists } = await req.json();
+  if (!playlists || !Array.isArray(playlists)) return NextResponse.json({ error: 'Invalid data' }, { status: 400 });
 
-  // Upsert them
   const upserts = playlists.map((pl: any) => ({
     id: pl.id,
     user_id: user.id,
@@ -35,9 +31,24 @@ export async function POST(req: Request) {
     updated_at: new Date().toISOString()
   }));
 
+  const { error } = await supabase.from('playlists').upsert(upserts, { onConflict: 'id' });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ success: true });
+}
+
+export async function DELETE(req: Request) {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { id } = await req.json();
+  if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
+
   const { error } = await supabase
     .from('playlists')
-    .upsert(upserts, { onConflict: 'id' });
+    .delete()
+    .eq('id', id)
+    .eq('user_id', user.id);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ success: true });

@@ -11,6 +11,7 @@ import { toast } from "sonner";
 import { LoginModal } from "@/components/Auth/LoginModal";
 import { createClient } from "@/lib/supabase/client";
 import { usePlaylistStore }   from "@/store/playlist.store";
+import { useQuotaStore, DAILY_QUOTA_LIMIT } from "@/store/quota.store";
 
 /* ─── Types ──────────────────────────────────────────────────────────── */
 
@@ -68,6 +69,8 @@ export default function SettingsPage() {
   const quality    = usePlayerStore((s) => s.quality);
   const setQuality = usePlayerStore((s) => s.setQuality);
   const { syncPlaylistsWithCloud } = usePlaylistStore();
+  const todayUsed  = useQuotaStore((s) => s.todayUsed());
+  const quotaEntries = useQuotaStore((s) => s.entries);
 
   const [user,        setUser]        = useState<any>(null);
   const [showLogin,   setShowLogin]   = useState(false);
@@ -83,7 +86,7 @@ export default function SettingsPage() {
   const [newEnv,      setNewEnv]      = useState<Env>("Production");
   const [showEnvMenu, setShowEnvMenu] = useState(false);
 
-  const usagePct = apiKey ? 42 : 0;
+  const usagePct = apiKey ? Math.min(100, Math.round((todayUsed / DAILY_QUOTA_LIMIT) * 100)) : 0;
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
@@ -413,19 +416,37 @@ export default function SettingsPage() {
               <div>
                 <span className="text-3xl font-black" style={{ color: 'var(--on-surface)' }}>{usagePct}</span>
                 <span className="text-lg font-black" style={{ color: 'var(--on-surface)' }}>%</span>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--on-surface-variant)' }}>Total Monthly Quota</p>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--on-surface-variant)' }}>Daily Quota Used</p>
               </div>
               <div className="text-right">
-                <p className="font-bold text-sm" style={{ color: 'var(--on-surface)' }}>2.1M / 5M</p>
-                <p className="text-xs" style={{ color: 'var(--on-surface-variant)' }}>Requests</p>
+                <p className="font-bold text-sm" style={{ color: 'var(--on-surface)' }}>{todayUsed.toLocaleString()} / {DAILY_QUOTA_LIMIT.toLocaleString()}</p>
+                <p className="text-xs" style={{ color: 'var(--on-surface-variant)' }}>Units Today</p>
               </div>
             </div>
             <div className="w-full h-2 rounded-full overflow-hidden"
                  style={{ background: 'var(--surface-container-high)' }}>
               <div className="h-full rounded-full transition-all duration-1000"
                    style={{ width: `${usagePct}%`,
-                            background: 'linear-gradient(90deg, var(--primary), var(--secondary))' }} />
+                            background: usagePct > 80 ? 'linear-gradient(90deg,#f87171,#ef4444)' : 'linear-gradient(90deg, var(--primary), var(--secondary))' }} />
             </div>
+            {/* Breakdown */}
+            {quotaEntries.length > 0 && (() => {
+              const today = new Date().toISOString().slice(0, 10);
+              const todayEntries = quotaEntries.filter(e => new Date(e.timestamp).toISOString().slice(0, 10) === today);
+              const byOp: Record<string, number> = {};
+              todayEntries.forEach(e => { byOp[e.operation] = (byOp[e.operation] || 0) + e.cost; });
+              return (
+                <div className="grid grid-cols-2 gap-2 mt-3">
+                  {Object.entries(byOp).map(([op, cost]) => (
+                    <div key={op} className="flex items-center justify-between px-3 py-2 rounded-lg"
+                         style={{ background: 'var(--surface-container-low)', border: '1px solid rgba(60,73,78,0.15)' }}>
+                      <span className="text-[10px] font-black uppercase tracking-wider" style={{ color: 'var(--on-surface-variant)' }}>{op}</span>
+                      <span className="text-xs font-bold" style={{ color: 'var(--on-surface)' }}>{cost} u</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
             <div className="flex items-start gap-2 p-3 rounded-xl mt-3"
                  style={{ background: 'var(--surface-container-low)', border: '1px solid rgba(60,73,78,0.15)' }}>
               <Shield className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'rgba(0,252,67,0.4)' }} />
